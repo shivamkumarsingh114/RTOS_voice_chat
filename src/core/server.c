@@ -20,6 +20,7 @@ extern int DEBUG;
 void * connection_handler (void *);
 void * broadcast_handler (void *);
 void * notification_handler (void *);
+static void * voice_handler (void *);
 void dict_init ();
 void queue_init ();
 
@@ -93,7 +94,9 @@ struct ClientNotification {
     int grp;
     int connfd;
 };
+//initalising all the queues
 struct queue * msgq;
+struct queue * vmsgq;
 struct queue * notifq;
 
 static void notifq_push (struct ClientNotification * notif) {
@@ -102,10 +105,14 @@ static void notifq_push (struct ClientNotification * notif) {
 static void msgq_push (struct ClientResponse * resp) {
     queue_push (msgq, resp);
 }
+static void vmsgq_push (struct ClientResponse * resp) {
+    queue_push (vmsgq, resp);
+}
 
 void queue_init () {
     msgq = queue_new ();
     notifq = queue_new ();
+    vmsgq = queue_new ();
 }
 
 void dict_init () {
@@ -156,10 +163,27 @@ void * connection_handler (void * arg) {
         while (READ_REQ()) {
             // READ_REQ ();
             switch (req) {
+                case MSG : {
+                    struct Msg * msg = malloc (sizeof (struct Msg));
+                    CALL (READ (msg, sizeof (struct Msg)), "read");
+                    struct ClientResponse * resp = malloc (sizeof (struct ClientResponse));
+                    resp->msg = msg;
+                    resp->connfd = connfd;
+                    msgq_push (resp);
+                    break;
+                }
+                case VMSG : {
+                    struct VMsg * msg = malloc (sizeof (struct VMsg));
+                    CALL (READ (msg, sizeof (struct VMsg)), "read");
+                    struct ClientResponse * resp = malloc (sizeof (struct ClientResponse));
+                    resp->msg = msg;
+                    resp->connfd = connfd;
+                    vmsgq_push (resp);
+                    break;
+                  }
                 case LEAVE_ROOM : {
                     dict_remove (room, connfd);
                     struct ClientNotification * notif = malloc (sizeof (struct ClientNotification));
-                    // READ (&notif->notif.ts, sizeof (struct t_format));
                     notif->grp = room;
                     notif->connfd = connfd;
                     printf ("%s has left the room %d\n", usr.name, room);
@@ -170,15 +194,6 @@ void * connection_handler (void * arg) {
                     free (arg);
                     LOG ("closed connection %d", connfd);
                     return NULL;
-                }
-                case MSG : {
-                    struct Msg * msg = malloc (sizeof (struct Msg));
-                    CALL (READ (msg, sizeof (struct Msg)), "read");
-                    struct ClientResponse * resp = malloc (sizeof (struct ClientResponse));
-                    resp->msg = msg;
-                    resp->connfd = connfd;
-                    msgq_push (resp);
-                    break;
                 }
             }
         }
@@ -229,6 +244,31 @@ void * notification_handler (void * arg) {
             curr=curr->nxt;
         }
         free (notif);
+        pthread_mutex_unlock (&dict[grp].lock);
+    }
+}
+
+static void * voice_handler (void * arg) {
+    while (1) {
+        struct ClientResponse * resp = queue_pop (vmsgq);
+        // LOG ("broadcating..");
+        struct VMsg * msg = resp->msg;
+        int grp = msg->grp, connfd = resp->connfd;
+
+        pthread_mutex_lock (&dict[grp].lock);
+        int serv_op = VMSG, tot = 0;
+        struct node * curr = dict[grp].head;
+        while (curr) {
+            if (curr->val == connfd) {
+                curr = curr->nxt;
+                continue;
+            }
+            ++tot;
+            int w1 = write (curr->val, &serv_op, sizeof (int));
+            int w2 = write (curr->val, msg, sizeof (struct VMsg));
+            curr=curr->nxt;
+        }
+        free (msg);
         pthread_mutex_unlock (&dict[grp].lock);
     }
 }

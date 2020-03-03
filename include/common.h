@@ -2,12 +2,13 @@
 
 enum Request {
     JOIN_ROOM,
-    LEAVE_ROOM,
     SEND_MSG,
+    LEAVE_ROOM,
 };
 
 enum ServerOps {
     MSG,
+    VMSG,
     BYE,
     NOTIF,
 };
@@ -32,5 +33,9 @@ struct Msg {
     int grp;
     struct t_format ts;
     char who[20];
-    char msg[1024];
+    char msg[256];
+};
+struct VMsg {
+    int grp;
+    uint8_t msg[1024];
 };

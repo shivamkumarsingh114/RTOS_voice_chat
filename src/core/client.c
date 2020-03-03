@@ -9,6 +9,16 @@
 #include <string.h>
 #include <arpa/inet.h>
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <pulse/simple.h>
+#include <pulse/error.h>
+
 extern int DEBUG;
 
 #define CALL(n, msg) if ((n) < 0) {fprintf (stderr, "%s (%s:%d)\n", msg, __FILE__, __LINE__); exit (EXIT_FAILURE);}
@@ -71,6 +81,12 @@ void Client_send (struct Client * client, char * buf, size_t len) {
     pthread_mutex_unlock (&client->lock);
 }
 
+void client_send_vmsg (struct Client * client, struct VMsg * vmsg) {
+    static int req = VMSG;
+    write (client->sock_fd, &req, sizeof (int));
+    write (client->sock_fd, vmsg, sizeof (struct VMsg));
+}
+
 void * listen_handler (void * arg) {
     struct Client * client = (struct Client *)arg;
     struct queue * q = client->response_q;
@@ -82,6 +98,19 @@ void * listen_handler (void * arg) {
                 struct Msg * msg = malloc (sizeof (struct Msg));
                 int b = read (client->sock_fd, msg, sizeof (struct Msg));
                 if (b < 0) return NULL;
+                struct ServerResponse * resp = malloc (sizeof (struct ServerResponse));
+                resp->type = req;
+                resp->data = msg;
+                resp->ts = ts;
+                queue_push (q, resp);
+                break;
+            }
+            case VMSG : {
+                struct VMsg * msg = malloc (sizeof (struct VMsg));
+                int b = read (client->sock_fd, msg, sizeof (struct VMsg));
+                if (b < 0) {
+                    return NULL;
+                }
                 struct ServerResponse * resp = malloc (sizeof (struct ServerResponse));
                 resp->type = req;
                 resp->data = msg;
