@@ -21,6 +21,7 @@ void * connection_handler (void *);
 void * broadcast_handler (void *);
 void * notification_handler (void *);
 static void * voice_handler (void *);
+
 void dict_init ();
 void queue_init ();
 
@@ -46,9 +47,10 @@ void Server_init (struct Server * server, int port) {
 void Server_listen (struct Server * server) {
     printf("Server initalised\n");
     LOG ("Server running.")
-    pthread_t tidb, tidn;
+    pthread_t tidb, tidn, tidv;
     pthread_create (&tidb, NULL, broadcast_handler, NULL);
     pthread_create (&tidn, NULL, notification_handler, NULL);
+    pthread_create (&tidn, NULL, voice_handler, NULL);
     while (1) {
         int *connfd = malloc (sizeof (int));
         //accept new connection
@@ -173,6 +175,7 @@ void * connection_handler (void * arg) {
                     break;
                 }
                 case VMSG : {
+                    //printf("voice message Request\n");
                     struct VMsg * msg = malloc (sizeof (struct VMsg));
                     CALL (READ (msg, sizeof (struct VMsg)), "read");
                     struct ClientResponse * resp = malloc (sizeof (struct ClientResponse));
@@ -251,7 +254,6 @@ void * notification_handler (void * arg) {
 static void * voice_handler (void * arg) {
     while (1) {
         struct ClientResponse * resp = queue_pop (vmsgq);
-        // LOG ("broadcating..");
         struct VMsg * msg = resp->msg;
         int grp = msg->grp, connfd = resp->connfd;
 

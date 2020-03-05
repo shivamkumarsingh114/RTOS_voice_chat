@@ -26,6 +26,27 @@ struct Client * client_p;
 int stat=1;
 int tot = 0, n = 0;
 
+/* A simple routine calling UNIX write() in a loop */
+static ssize_t loop_write(int fd, const void*data, size_t size) {
+    ssize_t ret = 0;
+
+    while (size > 0) {
+        ssize_t r;
+
+        if ((r = write(fd, data, size)) < 0)
+            return r;
+
+        if (r == 0)
+            break;
+
+        ret += r;
+        data = (const uint8_t*) data + r;
+        size -= (size_t) r;
+    }
+
+    return ret;
+}
+
 void sigint_handler (int signum) {
     if (client_p != NULL) {
         if (stat) {
@@ -53,7 +74,6 @@ void * read_handler (void * arg) {
     }
     while (1) {
         struct ServerResponse * resp = queue_pop (q);
-        ssize_t r = 1024;
         switch (resp->type) {
             case MSG : {
                 struct Msg * msg = resp->data;
@@ -68,7 +88,15 @@ void * read_handler (void * arg) {
                 break;
             }
             case VMSG : {
+                ssize_t r = 1024;
+                //printf("Playing\n");
                 struct VMsg * msg = resp->data;
+                pa_usec_t latency;
+                if ((latency = pa_simple_get_latency(s, &error)) == (pa_usec_t) -1) {
+                    fprintf(stderr, __FILE__": pa_simple_get_latency() failed: %s\n", pa_strerror(error));
+                    goto finish;
+                }
+                fprintf(stderr, "latency = %0.0f usec    \r", (float)latency);
                 if (pa_simple_write(s, msg->msg, (size_t) r, &error) < 0) {
                     fprintf(stderr, __FILE__": pa_simple_write() failed: %s\n", pa_strerror(error));
                     goto finish;
@@ -89,6 +117,7 @@ void * read_handler (void * arg) {
             fprintf(stderr, __FILE__": pa_simple_drain() failed: %s\n", pa_strerror(error));
             goto finish;
         }
+        ret = 0;
         if (s)
             pa_simple_free(s);
 }
@@ -103,13 +132,13 @@ void * write_handler (void * arg) {
 }
 
 void * vwrite_handler (void * arg) {
-    printf ("In voice_write_handler\n");
     static const pa_sample_spec ss = {
         .format = PA_SAMPLE_S16LE,
         .rate = 44100,
         .channels = 2
     };
     pa_simple *s = NULL;
+    int ret = 1;
     int error;
     if (!(s = pa_simple_new(NULL, NULL, PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
         fprintf(stderr, __FILE__", %d: pa_simple_new() failed: %s\n", __LINE__, pa_strerror(error));
@@ -126,11 +155,16 @@ void * vwrite_handler (void * arg) {
         }
         client_send_vmsg (client_p, &msg);
         cnt++;
+        // if (loop_write(STDOUT_FILENO, msg.msg, sizeof(msg.msg)) != sizeof(msg.msg)) {
+        //         fprintf(stderr, __FILE__ ": write() failed: %s\n", strerror(errno));
+        //         goto finish;
+        //   }
+
     }
     finish:
         if (s)
             pa_simple_free (s);
-    printf ("cnt=%d\n", cnt);
+    printf ("\ncount=%d\n", cnt);
 }
 
 int DEBUG;
@@ -149,12 +183,13 @@ int main (int argc, char ** argv) {
     pthread_t tidvw,tidw,tidr;
     pthread_create (&tidw, NULL, write_handler, NULL);
     pthread_create (&tidr, NULL, read_handler, NULL);
-    pthread_create (&tidvw, NULL, vwrite_handler, NULL);
+    if(voice)
+      pthread_create (&tidvw, NULL, vwrite_handler, NULL);
 
     signal (SIGINT, sigint_handler);
     pthread_join (tidw, NULL);
     pthread_join (tidr, NULL);
-    pthread_join (tidvw, NULL);
-
-    Client_exit (client_p);
+    if(voice)
+      pthread_join (tidvw, NULL);
+    // Client_exit (client_p);
 }

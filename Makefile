@@ -27,9 +27,9 @@ client: $(client_obj) $(ds_obj) $(client_core_obj)
 	$(CC) -o bin/$@ $^ $(LDFLAGS)
 
 $(BIN)/play:
-	gcc $(EX)/playaudio.c -lpulse -lpulse-simple -o $(BIN)/play
+	gcc $(EX)/playaudio.c  -o $(BIN)/play $(LDFLAGS)
 $(BIN)/rec:
-	gcc $(EX)/recordaudio.c -lpulse -lpulse-simple -o $(BIN)/rec
+	gcc $(EX)/recordaudio.c -o $(BIN)/rec $(LDFLAGS)
 
 .PHONY: clean
 clean:

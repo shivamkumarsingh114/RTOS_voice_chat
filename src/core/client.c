@@ -106,6 +106,7 @@ void * listen_handler (void * arg) {
                 break;
             }
             case VMSG : {
+              //  printf("Entering the voice message recieve\n");
                 struct VMsg * msg = malloc (sizeof (struct VMsg));
                 int b = read (client->sock_fd, msg, sizeof (struct VMsg));
                 if (b < 0) {
